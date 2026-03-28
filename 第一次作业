@@ -1,293 +1,283 @@
-import numpy as np
+# ====================== 1. 导入依赖库 ======================
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import cross_val_score
+import warnings
+
+warnings.filterwarnings('ignore')
+
+# 解决中文显示问题
+plt.rcParams['font.sans-serif'] = ['SimHei']  # Windows
+# plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei']  # Linux
+plt.rcParams['axes.unicode_minus'] = False
+
+# ====================== 2. 读取Excel数据 ======================
+# 请将文件路径替换为你本地的Data4Regression.xlsx路径
+file_path = "Data4Regression.xlsx"
+# 表单一：训练数据，表单二：测试数据
+train_df = pd.read_excel(file_path, sheet_name=0)
+test_df = pd.read_excel(file_path, sheet_name=1)
+
+# 提取特征和标签
+X_train = train_df.iloc[:, 0].values.reshape(-1, 1)  # 训练集X
+y_train = train_df.iloc[:, 1].values  # 训练集y
+X_test = test_df.iloc[:, 0].values.reshape(-1, 1)  # 测试集X
+y_test = test_df.iloc[:, 1].values  # 测试集y
+
+# ====================== 3. 数据基础信息输出 ======================
+print("=" * 60)
+print("📊 数据基础信息")
+print("=" * 60)
+print(f"训练集样本数：{X_train.shape[0]}，特征数：{X_train.shape[1]}")
+print(f"测试集样本数：{X_test.shape[0]}，特征数：{X_test.shape[1]}")
+print(f"训练集X范围：[{X_train.min():.2f}, {X_train.max():.2f}]")
+print(f"训练集y范围：[{y_train.min():.2f}, {y_train.max():.2f}]")
+print(f"测试集X范围：[{X_test.min():.2f}, {X_test.max():.2f}]")
+print(f"测试集y范围：[{y_test.min():.2f}, {y_test.max():.2f}]")
+print(f"缺失值：训练集{train_df.isnull().sum().sum()}个，测试集{test_df.isnull().sum().sum()}个")
+
+# 数据分布可视化
+plt.figure(figsize=(10, 5))
+plt.scatter(X_train, y_train, c='blue', alpha=0.6, label='训练数据')
+plt.scatter(X_test, y_test, c='red', alpha=0.6, label='测试数据')
+plt.xlabel('特征X')
+plt.ylabel('目标变量y')
+plt.title('数据分布可视化')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+
+# ====================== 4. 线性拟合：最小二乘法/梯度下降/牛顿法 ======================
+# 为X添加偏置项（截距项）
+X_train_b = np.hstack([np.ones((X_train.shape[0], 1)), X_train])
+X_test_b = np.hstack([np.ones((X_test.shape[0], 1)), X_test])
+
+# 特征标准化（梯度下降/牛顿法需要）
+X_train_std = (X_train - X_train.mean()) / X_train.std()
+X_test_std = (X_test - X_train.mean()) / X_train.std()
+X_train_std_b = np.hstack([np.ones((X_train_std.shape[0], 1)), X_train_std])
+X_test_std_b = np.hstack([np.ones((X_test_std.shape[0], 1)), X_test_std])
+
+# 存储所有线性模型结果
+linear_results = {}
+
+# ---------------- 4.1 最小二乘法 (OLS) ----------------
+print("\n" + "=" * 60)
+print("🔹 线性拟合 - 最小二乘法")
+print("=" * 60)
+theta_ols = np.linalg.inv(X_train_b.T @ X_train_b) @ X_train_b.T @ y_train
+b_ols, w_ols = theta_ols[0], theta_ols[1]
+y_train_ols = X_train_b @ theta_ols
+y_test_ols = X_test_b @ theta_ols
+
+# 计算误差
+train_mse_ols = mean_squared_error(y_train, y_train_ols)
+test_mse_ols = mean_squared_error(y_test, y_test_ols)
+train_r2_ols = r2_score(y_train, y_train_ols)
+test_r2_ols = r2_score(y_test, y_test_ols)
+
+linear_results['OLS'] = {
+    'params': (b_ols, w_ols), 'train_mse': train_mse_ols,
+    'test_mse': test_mse_ols, 'train_r2': train_r2_ols, 'test_r2': test_r2_ols
+}
+print(f"参数：截距={b_ols:.6f}，斜率={w_ols:.6f}")
+print(f"训练MSE：{train_mse_ols:.6f}，测试MSE：{test_mse_ols:.6f}")
+print(f"训练R²：{train_r2_ols:.6f}，测试R²：{test_r2_ols:.6f}")
 
 
-# =========================================================
-# 1. 读取 Excel 数据
-# =========================================================
-def load_data(file_name, train_sheet=0, test_sheet=1, header=None):
-    """
-    读取 Excel 文件中的训练集和测试集
-    默认：
-        表单一 = 训练集
-        表单二 = 测试集
-        第一列 = x
-        第二列 = y
-    """
-    train_df = pd.read_excel(file_name, sheet_name=train_sheet, header=header)
-    test_df = pd.read_excel(file_name, sheet_name=test_sheet, header=header)
-
-    x_train = train_df.iloc[:, 0].values.reshape(-1, 1)
-    y_train = train_df.iloc[:, 1].values.reshape(-1, 1)
-
-    x_test = test_df.iloc[:, 0].values.reshape(-1, 1)
-    y_test = test_df.iloc[:, 1].values.reshape(-1, 1)
-
-    return x_train, y_train, x_test, y_test, train_df, test_df
-
-
-# =========================================================
-# 2. 基础工具函数
-# =========================================================
-def add_bias(X):
-    """给输入特征添加偏置项 1"""
-    return np.hstack([X, np.ones((X.shape[0], 1))])
-
-
-def mse(y_true, y_pred):
-    """均方误差"""
-    return np.mean((y_true - y_pred) ** 2)
-
-
-def polynomial_features(X, degree):
-    """
-    构造多项式特征：
-    X -> [x, x^2, ..., x^degree]
-    """
-    return np.hstack([X ** i for i in range(1, degree + 1)])
-
-
-# =========================================================
-# 3. 线性回归：最小二乘法
-# =========================================================
-def least_squares(X, y):
-    """
-    最小二乘法解析解
-    theta = [w, b]^T
-    """
-    X_b = add_bias(X)
-    # 用 pinv 比 inv 更稳定
-    theta = np.linalg.pinv(X_b) @ y
+# ---------------- 4.2 梯度下降法 (GD) ----------------
+def gradient_descent(X, y, lr=0.01, epochs=200000, tol=1e-8):
+    theta = np.random.randn(X.shape[1])
+    for epoch in range(epochs):
+        y_pred = X @ theta
+        grad = (2 / len(y)) * X.T @ (y_pred - y)
+        theta_new = theta - lr * grad
+        if np.linalg.norm(theta_new - theta) < tol:
+            print(f"梯度下降迭代{epoch + 1}轮收敛")
+            break
+        theta = theta_new
     return theta
 
 
-# =========================================================
-# 4. 线性回归：梯度下降法
-# =========================================================
-def gradient_descent(X, y, lr=0.01, epochs=5000):
-    """
-    梯度下降法
-    """
-    X_b = add_bias(X)
-    n, d = X_b.shape
-    theta = np.zeros((d, 1))
-    loss_history = []
+theta_gd = gradient_descent(X_train_std_b, y_train)
+# 转换为原始尺度参数
+w_gd = theta_gd[1] / X_train.std()
+b_gd = theta_gd[0] - w_gd * X_train.mean()
+y_train_gd = X_train_std_b @ theta_gd
+y_test_gd = X_test_std_b @ theta_gd
 
-    for _ in range(epochs):
-        y_pred = X_b @ theta
-        grad = (2 / n) * X_b.T @ (y_pred - y)
-        theta = theta - lr * grad
-        loss_history.append(mse(y, y_pred))
+train_mse_gd = mean_squared_error(y_train, y_train_gd)
+test_mse_gd = mean_squared_error(y_test, y_test_gd)
+train_r2_gd = r2_score(y_train, y_train_gd)
+test_r2_gd = r2_score(y_test, y_test_gd)
 
-    return theta, loss_history
-
-
-# =========================================================
-# 5. 线性回归：牛顿法
-# =========================================================
-def newton_method(X, y, max_iter=10):
-    """
-    牛顿法
-    对于线性回归，Hessian 为常数矩阵
-    """
-    X_b = add_bias(X)
-    n, d = X_b.shape
-    theta = np.zeros((d, 1))
-    loss_history = []
-
-    H = (2 / n) * (X_b.T @ X_b)
-    H_inv = np.linalg.pinv(H)
-
-    for _ in range(max_iter):
-        y_pred = X_b @ theta
-        grad = (2 / n) * X_b.T @ (y_pred - y)
-        theta = theta - H_inv @ grad
-        loss_history.append(mse(y, y_pred))
-
-    return theta, loss_history
+linear_results['GD'] = {
+    'params': (b_gd, w_gd), 'train_mse': train_mse_gd,
+    'test_mse': test_mse_gd, 'train_r2': train_r2_gd, 'test_r2': test_r2_gd
+}
+print(f"\n🔹 线性拟合 - 梯度下降法")
+print(f"参数：截距={b_gd:.6f}，斜率={w_gd:.6f}")
+print(f"训练MSE：{train_mse_gd:.6f}，测试MSE：{test_mse_gd:.6f}")
+print(f"训练R²：{train_r2_gd:.6f}，测试R²：{test_r2_gd:.6f}")
 
 
-# =========================================================
-# 6. 通用预测函数
-# =========================================================
-def predict_linear(X, theta):
-    """线性模型预测"""
-    X_b = add_bias(X)
-    return X_b @ theta
-
-
-def predict_polynomial(X, theta, degree):
-    """多项式回归预测"""
-    X_poly = polynomial_features(X, degree)
-    X_poly_b = add_bias(X_poly)
-    return X_poly_b @ theta
-
-
-# =========================================================
-# 7. 多项式回归（最小二乘）
-# =========================================================
-def least_squares_poly(X, y, degree):
-    """
-    多项式回归 + 最小二乘
-    """
-    X_poly = polynomial_features(X, degree)
-    X_poly_b = add_bias(X_poly)
-    theta = np.linalg.pinv(X_poly_b) @ y
+# ---------------- 4.3 牛顿法 ----------------
+def newton_method(X, y, epochs=50, tol=1e-10):
+    theta = np.random.randn(X.shape[1])
+    for epoch in range(epochs):
+        y_pred = X @ theta
+        grad = (2 / len(y)) * X.T @ (y_pred - y)
+        hessian = (2 / len(y)) * X.T @ X
+        theta_new = theta - np.linalg.inv(hessian) @ grad
+        if np.linalg.norm(theta_new - theta) < tol:
+            print(f"牛顿法迭代{epoch + 1}轮收敛")
+            break
+        theta = theta_new
     return theta
 
 
-# =========================================================
-# 8. 打印结果
-# =========================================================
-def print_result(name, theta, train_mse, test_mse):
-    print(f"\n[{name}]")
-    print("参数 theta =")
-    print(theta)
-    print(f"训练误差 MSE = {train_mse:.6f}")
-    print(f"测试误差 MSE = {test_mse:.6f}")
+theta_newton = newton_method(X_train_std_b, y_train)
+# 转换为原始尺度参数
+w_newton = theta_newton[1] / X_train.std()
+b_newton = theta_newton[0] - w_newton * X_train.mean()
+y_train_newton = X_train_std_b @ theta_newton
+y_test_newton = X_test_std_b @ theta_newton
 
+train_mse_newton = mean_squared_error(y_train, y_train_newton)
+test_mse_newton = mean_squared_error(y_test, y_test_newton)
+train_r2_newton = r2_score(y_train, y_train_newton)
+test_r2_newton = r2_score(y_test, y_test_newton)
 
-# =========================================================
-# 9. 主程序
-# =========================================================
-def main():
-    # ===== 这里改成你的 Excel 文件名 =====
-    file_name = "Data4Regression.xlsx"
-    # 如果你用的是上传文件改名后的文件，比如：
-    # file_name = "dc6730ba-995e-442b-9440-4a4697d5ebf7.xlsx"
+linear_results['Newton'] = {
+    'params': (b_newton, w_newton), 'train_mse': train_mse_newton,
+    'test_mse': test_mse_newton, 'train_r2': train_r2_newton, 'test_r2': test_r2_newton
+}
+print(f"\n🔹 线性拟合 - 牛顿法")
+print(f"参数：截距={b_newton:.6f}，斜率={w_newton:.6f}")
+print(f"训练MSE：{train_mse_newton:.6f}，测试MSE：{test_mse_newton:.6f}")
+print(f"训练R²：{train_r2_newton:.6f}，测试R²：{test_r2_newton:.6f}")
 
-    # 读取数据
-    x_train, y_train, x_test, y_test, train_df, test_df = load_data(file_name)
+# 线性模型结果汇总
+print("\n" + "=" * 70)
+print("📋 三种线性模型结果汇总")
+print("=" * 70)
+print(f"{'方法':<10} {'训练MSE':<12} {'测试MSE':<12} {'训练R²':<12} {'测试R²':<12}")
+print("-" * 70)
+methods = ['最小二乘法', '梯度下降法', '牛顿法']
+mses = [train_mse_ols, train_mse_gd, train_mse_newton]
+test_mses = [test_mse_ols, test_mse_gd, test_mse_newton]
+r2s = [train_r2_ols, train_r2_gd, train_r2_newton]
+test_r2s = [test_r2_ols, test_r2_gd, test_r2_newton]
+for i in range(3):
+    print(f"{methods[i]:<10} {mses[i]:<12.6f} {test_mses[i]:<12.6f} {r2s[i]:<12.6f} {test_r2s[i]:<12.6f}")
 
-    print("=" * 60)
-    print("数据读取成功")
-    print("=" * 60)
-    print("训练集前5行：")
-    print(train_df.head())
-    print("\n测试集前5行：")
-    print(test_df.head())
-    print("\nx_train shape:", x_train.shape)
-    print("y_train shape:", y_train.shape)
-    print("x_test shape:", x_test.shape)
-    print("y_test shape:", y_test.shape)
+# 线性拟合可视化
+plt.figure(figsize=(12, 5))
+x_line = np.linspace(X_train.min(), X_train.max(), 100).reshape(-1, 1)
+y_line = b_ols + w_ols * x_line
+plt.subplot(121)
+plt.scatter(X_train, y_train, c='blue', alpha=0.5, label='训练数据')
+plt.plot(x_line, y_line, c='red', linewidth=2, label='线性拟合线')
+plt.title('训练集线性拟合')
+plt.legend()
+plt.grid(alpha=0.3)
 
-    # -----------------------------------------------------
-    # 1) 线性拟合：最小二乘法
-    # -----------------------------------------------------
-    theta_ls = least_squares(x_train, y_train)
-    y_train_pred_ls = predict_linear(x_train, theta_ls)
-    y_test_pred_ls = predict_linear(x_test, theta_ls)
+plt.subplot(122)
+plt.scatter(X_test, y_test, c='red', alpha=0.5, label='测试数据')
+plt.plot(x_line, y_line, c='blue', linewidth=2, label='线性拟合线')
+plt.title('测试集线性拟合')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
 
-    train_mse_ls = mse(y_train, y_train_pred_ls)
-    test_mse_ls = mse(y_test, y_test_pred_ls)
+# ====================== 5. 非线性拟合：多项式回归 ======================
+print("\n" + "=" * 60)
+print("🔸 非线性拟合 - 多项式回归")
+print("=" * 60)
+degrees = [2, 3, 4, 5, 6]
+poly_results = {}
 
-    # -----------------------------------------------------
-    # 2) 线性拟合：梯度下降法
-    # -----------------------------------------------------
-    theta_gd, gd_loss = gradient_descent(x_train, y_train, lr=0.01, epochs=5000)
-    y_train_pred_gd = predict_linear(x_train, theta_gd)
-    y_test_pred_gd = predict_linear(x_test, theta_gd)
+# 训练不同度数的多项式模型
+for d in degrees:
+    model = Pipeline([
+        ('poly', PolynomialFeatures(degree=d)),
+        ('linear', LinearRegression())
+    ])
+    model.fit(X_train, y_train)
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
 
-    train_mse_gd = mse(y_train, y_train_pred_gd)
-    test_mse_gd = mse(y_test, y_test_pred_gd)
+    # 计算误差
+    train_mse = mean_squared_error(y_train, y_train_pred)
+    test_mse = mean_squared_error(y_test, y_test_pred)
+    train_r2 = r2_score(y_train, y_train_pred)
+    test_r2 = r2_score(y_test, y_test_pred)
+    # 5折交叉验证
+    cv_mse = -cross_val_score(model, X_train, y_train, cv=5, scoring='neg_mean_squared_error').mean()
 
-    # -----------------------------------------------------
-    # 3) 线性拟合：牛顿法
-    # -----------------------------------------------------
-    theta_nt, nt_loss = newton_method(x_train, y_train, max_iter=10)
-    y_train_pred_nt = predict_linear(x_train, theta_nt)
-    y_test_pred_nt = predict_linear(x_test, theta_nt)
+    poly_results[d] = {
+        'model': model, 'train_mse': train_mse, 'test_mse': test_mse,
+        'train_r2': train_r2, 'test_r2': test_r2, 'cv_mse': cv_mse
+    }
 
-    train_mse_nt = mse(y_train, y_train_pred_nt)
-    test_mse_nt = mse(y_test, y_test_pred_nt)
+# 多项式模型结果汇总
+print("📋 多项式回归结果汇总")
+print(f"{'度数':<6} {'训练MSE':<10} {'测试MSE':<10} {'CV-MSE':<10} {'训练R²':<10} {'测试R²':<10}")
+print("-" * 60)
+for d in degrees:
+    res = poly_results[d]
+    print(
+        f"{d:<6} {res['train_mse']:<10.6f} {res['test_mse']:<10.6f} {res['cv_mse']:<10.6f} {res['train_r2']:<10.6f} {res['test_r2']:<10.6f}")
+print(f"线性模型  {train_mse_ols:<10.6f} {test_mse_ols:<10.6f} {'-':<10} {train_r2_ols:<10.6f} {test_r2_ols:<10.6f}")
 
-    # -----------------------------------------------------
-    # 4) 非线性改进：多项式回归
-    # -----------------------------------------------------
-    degree = 3
-    theta_poly = least_squares_poly(x_train, y_train, degree)
-    y_train_pred_poly = predict_polynomial(x_train, theta_poly, degree)
-    y_test_pred_poly = predict_polynomial(x_test, theta_poly, degree)
+# 选择最优模型
+best_degree = min(poly_results, key=lambda x: poly_results[x]['test_mse'])
+best_model = poly_results[best_degree]['model']
+best_test_mse = poly_results[best_degree]['test_mse']
+improve = (test_mse_ols - best_test_mse) / test_mse_ols * 100
 
-    train_mse_poly = mse(y_train, y_train_pred_poly)
-    test_mse_poly = mse(y_test, y_test_pred_poly)
+print(f"\n🏆 最优非线性模型：{best_degree}次多项式回归")
+print(f"最优模型测试MSE：{best_test_mse:.6f}")
+print(f"相比线性模型提升：{improve:.2f}%")
 
-    # -----------------------------------------------------
-    # 5) 打印结果
-    # -----------------------------------------------------
-    print("\n" + "=" * 60)
-    print("一、线性模型实验结果")
-    print("=" * 60)
+# 最优模型可视化
+plt.figure(figsize=(12, 5))
+x_sorted = np.sort(X_train, axis=0)
+y_best = best_model.predict(x_sorted)
+plt.subplot(121)
+plt.scatter(X_train, y_train, c='blue', alpha=0.5, label='训练数据')
+plt.plot(x_sorted, y_best, c='red', linewidth=2, label=f'{best_degree}次多项式')
+plt.plot(x_line, b_ols + w_ols * x_line, c='green', linestyle='--', label='线性模型')
+plt.title('训练集最优模型拟合')
+plt.legend()
+plt.grid(alpha=0.3)
 
-    print_result("最小二乘法", theta_ls, train_mse_ls, test_mse_ls)
-    print_result("梯度下降法 GD", theta_gd, train_mse_gd, test_mse_gd)
-    print_result("牛顿法", theta_nt, train_mse_nt, test_mse_nt)
+plt.subplot(122)
+plt.scatter(X_test, y_test, c='red', alpha=0.5, label='测试数据')
+plt.plot(x_sorted, y_best, c='blue', linewidth=2, label=f'{best_degree}次多项式')
+plt.plot(x_line, b_ols + w_ols * x_line, c='green', linestyle='--', label='线性模型')
+plt.title('测试集最优模型拟合')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
 
-    print("\n" + "=" * 60)
-    print(f"二、改进模型：{degree}阶多项式回归")
-    print("=" * 60)
-    print_result(f"{degree}阶多项式回归", theta_poly, train_mse_poly, test_mse_poly)
+# 残差分析
+y_train_best = best_model.predict(X_train)
+y_test_best = best_model.predict(X_test)
+res_linear_train = y_train - y_train_ols
+res_poly_train = y_train - y_train_best
+res_linear_test = y_test - y_test_ols
+res_poly_test = y_test - y_test_best
 
-    # -----------------------------------------------------
-    # 6) 结果汇总表
-    # -----------------------------------------------------
-    print("\n" + "=" * 60)
-    print("三、结果汇总")
-    print("=" * 60)
-    print(f"{'方法':<20}{'训练误差':<15}{'测试误差':<15}")
-    print(f"{'最小二乘法':<20}{train_mse_ls:<15.6f}{test_mse_ls:<15.6f}")
-    print(f"{'梯度下降法':<20}{train_mse_gd:<15.6f}{test_mse_gd:<15.6f}")
-    print(f"{'牛顿法':<20}{train_mse_nt:<15.6f}{test_mse_nt:<15.6f}")
-    print(f"{str(degree) + '阶多项式回归':<20}{train_mse_poly:<15.6f}{test_mse_poly:<15.6f}")
-
-    # -----------------------------------------------------
-    # 7) 画拟合曲线
-    # -----------------------------------------------------
-    x_all = np.vstack([x_train, x_test])
-    x_min, x_max = x_all.min(), x_all.max()
-    x_plot = np.linspace(x_min, x_max, 400).reshape(-1, 1)
-
-    y_plot_ls = predict_linear(x_plot, theta_ls)
-    y_plot_poly = predict_polynomial(x_plot, theta_poly, degree)
-
-    plt.figure(figsize=(10, 6))
-    plt.scatter(x_train, y_train, label="Train Data")
-    plt.scatter(x_test, y_test, label="Test Data")
-    plt.plot(x_plot, y_plot_ls, label="Linear Fit (LS)")
-    plt.plot(x_plot, y_plot_poly, label=f"Polynomial Fit (degree={degree})")
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.title("Regression Fit Result")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-    # -----------------------------------------------------
-    # 8) 画收敛曲线
-    # -----------------------------------------------------
-    plt.figure(figsize=(10, 5))
-    plt.plot(gd_loss, label="GD Loss")
-    plt.plot(nt_loss, label="Newton Loss")
-    plt.xlabel("Iteration")
-    plt.ylabel("Training MSE")
-    plt.title("Convergence Curve")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-    # -----------------------------------------------------
-    # 9) 简单分析结论
-    # -----------------------------------------------------
-    print("\n" + "=" * 60)
-    print("四、实验分析")
-    print("=" * 60)
-    print("1. 最小二乘法、梯度下降法和牛顿法优化的是同一个线性回归目标函数。")
-    print("2. 如果 GD 收敛充分，则三者的训练误差和测试误差应非常接近。")
-    print("3. 若线性模型误差较高，说明数据可能存在非线性关系，线性模型出现欠拟合。")
-    print("4. 多项式回归引入非线性特征后，通常可以降低训练误差和测试误差。")
-    print("5. 如果多项式阶数过高，可能导致训练误差继续下降，但测试误差上升，即过拟合。")
-
-
-if __name__ == "__main__":
-    main()
+print("\n" + "=" * 60)
+print("📉 残差分析")
+print("=" * 60)
+print(f"线性模型训练残差标准差：{np.std(res_linear_train):.6f}")
+print(f"{best_degree}次多项式训练残差标准差：{np.std(res_poly_train):.6f}")
+print(f"线性模型测试残差标准差：{np.std(res_linear_test):.6f}")
+print(f"{best_degree}次多项式测试残差标准差：{np.std(res_poly_test):.6f}")
