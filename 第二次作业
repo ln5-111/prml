@@ -1,0 +1,108 @@
+import numpy as np
+import matplotlib.pyplot as plt
+def make_moons_3d(n_samples=500, noise=0.1):
+    t = np.linspace(0, 2 * np.pi, n_samples)
+    x = 1.5 * np.cos(t)
+    y = np.sin(t)
+    z = np.sin(2 * t)
+
+    X = np.vstack([
+        np.column_stack([x, y, z]),
+        np.column_stack([-x, y - 1, -z])
+    ])
+    y = np.hstack([np.zeros(n_samples), np.ones(n_samples)])
+
+    X += np.random.normal(scale=noise, size=X.shape)
+
+    return X, y
+
+# 训练数据（1000/类 → 2000 total）
+X_train, y_train = make_moons_3d(n_samples=500, noise=0.2)
+
+# 测试数据（250/类 → 500 total）
+X_test, y_test = make_moons_3d(n_samples=250, noise=0.2)
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+# decision tree
+dt = DecisionTreeClassifier(max_depth=5)
+dt.fit(X_train, y_train)
+
+y_pred_dt = dt.predict(X_test)
+acc_dt = accuracy_score(y_test, y_pred_dt)
+print("Decision Tree Accuracy:", acc_dt)
+
+# AdaBoost + Decision Tree
+ada = AdaBoostClassifier(
+    estimator=DecisionTreeClassifier(max_depth=2),
+    n_estimators=200,
+    learning_rate=0.5
+)
+
+ada.fit(X_train, y_train)
+
+y_pred_ada = ada.predict(X_test)
+acc_ada = accuracy_score(y_test, y_pred_ada)
+print("AdaBoost Accuracy:", acc_ada)
+
+# SVM
+# Linear Kernel
+svm_linear = SVC(kernel='linear')
+svm_linear.fit(X_train, y_train)
+acc_svm_linear = accuracy_score(y_test, svm_linear.predict(X_test))
+
+# Polynomial Kernel
+svm_poly = SVC(kernel='poly', degree=3)
+svm_poly.fit(X_train, y_train)
+acc_svm_poly = accuracy_score(y_test, svm_poly.predict(X_test))
+
+# RBF Kernel
+svm_rbf = SVC(kernel='rbf', gamma='scale')
+svm_rbf.fit(X_train, y_train)
+acc_svm_rbf = accuracy_score(y_test, svm_rbf.predict(X_test))
+
+print("SVM Linear:", acc_svm_linear)
+print("SVM Poly:", acc_svm_poly)
+print("SVM RBF:", acc_svm_rbf)
+
+
+def plot_result(X, y_true, y_pred, title):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    correct = (y_true == y_pred)
+    wrong = (y_true != y_pred)
+
+    # 正确点
+    ax.scatter(
+        X[correct, 0], X[correct, 1], X[correct, 2],
+        c=y_true[correct],
+        cmap='coolwarm',
+        s=10
+    )
+
+    # 错误点（黑色）
+    ax.scatter(
+        X[wrong, 0], X[wrong, 1], X[wrong, 2],
+        c='black',
+        s=40,
+        marker='x'
+    )
+
+    ax.set_title(title)
+    plt.show()
+
+
+# ====== 画图 ======
+
+plot_result(X_test, y_test, y_pred_dt, "Decision Tree")
+
+plot_result(X_test, y_test, y_pred_ada, "AdaBoost")
+
+plot_result(X_test, y_test, svm_linear.predict(X_test), "SVM Linear")
+
+plot_result(X_test, y_test, svm_poly.predict(X_test), "SVM Poly")
+
+plot_result(X_test, y_test, svm_rbf.predict(X_test), "SVM RBF")
